@@ -28,7 +28,7 @@ Olga Kondrashova - implemented the parser in R
 
 ## 3. Usage and Program Options
 
-Run MLPAbrary_analysis.R script:
+Run spliceAI_parser.R script:
 
 `Rscript spliceAI_parser.R -i example_variants.vcf -g example_gene_list.txt -o example_variants_parsed.tsv`
 
