@@ -39,7 +39,7 @@ Full options are available by running:
 `Rscript spliceAI_parser.R -h`
 
 
- Options:
+ OPTIONS:
  
 
 	
