@@ -1,12 +1,97 @@
 #!/usr/bin/env Rscript
 
-
 ## SpliceAI output parser
 ## Developed by Daffodil Canson
-## Implemented in R by Olga Kondrashova
-## Date: 21/07/2022
+## Implemented in R by Olga Kondrashova & Aimee Davidson
+## Functionality extended by Aimee Davidson
+## Date: 12/12/2022
 
-###############################################################################
+################## Load libraries and arguments ################################
+
+# Load options parser
+library(optparse, quietly = TRUE)
+
+
+# Arguments
+option_list = list(
+  make_option(c("-i", "--in_vcf"), type="character", default=NULL, 
+              help="Input vcf file direct from SpliceAI", metavar="FILE"),
+  make_option(c("-r", "--refseq_table"), type="character", default=NULL, 
+              help="Preprocessed UCSC ncbiRefSeq table (download_tx.R script)", 
+              metavar="FILE"),
+  make_option(c("-o", "--out_file"), type="character", default="out.tsv", 
+              help="output file name [default= %default]", metavar="FILE"),
+  make_option("--DS_AGDG_MIN_T", type="character", default=0.02, 
+              help="Delta score (acceptor & donor gain) - minimum [default= %default]", 
+              metavar="NUMERIC"),  
+  make_option("--DS_AGDG_MAX_T", type="character", default=0.05, 
+              help="Delta score (acceptor & donor gain) - maximum [default= %default]",
+              metavar="NUMERIC"), 
+  make_option("--GEX_size_MIN", type="character", default=25, 
+              help="Gained exon size range - minimum [default= %default]",
+              metavar="INT"), 
+  make_option("--GEX_size_MAX", type="character", default=500, 
+              help="Gained exon size range - maximum [default= %default]",
+              metavar="INT"), 
+  make_option("--DS_ALDL_MIN_T", type="character", default=0.02, 
+              help="Delta score (acceptor & donor loss)  - minimum [default= %default]", 
+              metavar="NUMERIC"), 
+  make_option("--DS_ALDL_MAX_T", type="character", default=0.2, 
+              help="Delta score (acceptor & donor loss) - maximum [default= %default]",
+              metavar="NUMERIC"), 
+  make_option("--AG_T", type="character", default=0.2, 
+              help="Cryptic splice site - acceptor gain [default= %default]",
+              metavar="NUMERIC"), 
+  make_option("--DG_T", type="character", default=0.2, 
+              help="Cryptic splice site - donor gain [default= %default]",
+              metavar="NUMERIC"),
+  make_option("--ref", type="character", default="hg19",
+              help="Optional: reference genome (hg19 or hg38) [default= %default]",
+              metavar="STRING")
+); 
+
+opt_parser = OptionParser(option_list=option_list);
+opt = parse_args(opt_parser);
+
+# Load other required libraries
+library(tidyverse, quietly=TRUE)
+library(Biostrings, quietly = TRUE)
+
+# Load all arguments as variables
+DS_AGDG_MIN_T <- opt$DS_AGDG_MIN_T
+DS_AGDG_MAX_T <- opt$DS_AGDG_MAX_T
+GEX_size_MIN <- opt$GEX_size_MIN
+GEX_size_MAX <- opt$GEX_size_MAX
+DS_ALDL_MIN_T <-opt$DS_ALDL_MIN_T
+DS_ALDL_MAX_T <- opt$DS_ALDL_MAX_T
+AG_T <- opt$AG_T
+DG_T <- opt$DG_T
+input <- read_tsv(opt$in_vcf, comment="##",
+                  col_types = c(`#CHROM` = "c"))
+refseq_table <- read_tsv(opt$refseq_table,
+                         col_types = cols(.default = "c"))
+genes <- read_tsv(opt$gene_list)
+output_file <- opt$out_file
+ref_genome <- opt$ref
+
+# # Troubleshooting
+# DS_AGDG_MIN_T <- 0.02
+# DS_AGDG_MAX_T <- 0.05
+# GEX_size_MIN <- 25
+# GEX_size_MAX <- 500
+# DS_ALDL_MIN_T <- 0.02
+# DS_ALDL_MAX_T <- 0.2
+# AG_T <- 0.2
+# DG_T <- 0.2
+# input <- read_tsv("./example_variants.vcf",comment="##",
+#                   col_types = c(`#CHROM` = "c"))
+# genes <- read_tsv("./example_gene_list.txt")
+# refseq_table <- read_tsv("./example_refseq_tx.txt",
+#                          col_types = cols(.default = "c"))
+# output_file <- "./example_variants_parsed.tsv"
+# ref_genome <- "hg19"
+
+################## Helper functions ############################################
 # Helper functions amino acid predictions
 
 # Mutate the DNA sequence to add the variant
@@ -356,11 +441,11 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   consensusTab <- consensusTab %>% ungroup() %>%
     dplyr::slice(., ((minKeepExonRow):n()))  
   # get the DNA sequences
-  alteredExonDNAseqs <- getSeq(Hsapiens,altTable$chrom,start=altTable$eStartAdj,end=altTable$eEnd)
-  consensusExonDNAseqs <- getSeq(Hsapiens,consensusTab$chrom,start=consensusTab$eStartAdj,end=consensusTab$eEnd)
+  alteredExonDNAseqs <- getSeq(Hsapiens,paste0("chr",altTable$chrom),start=altTable$eStartAdj,end=altTable$eEnd)
+  consensusExonDNAseqs <- getSeq(Hsapiens,paste0("chr",consensusTab$chrom),start=consensusTab$eStartAdj,end=consensusTab$eEnd)
   # make necessary adjustments for the variant itself
   # also check whether the reference is correct
-  genomeRef = as.character(getSeq(Hsapiens,currentChr,varPos,varPos))
+  genomeRef = as.character(getSeq(Hsapiens,paste0("chr",currentChr),varPos,varPos))
   adjustedExonDNAseq = add_variant(ref = ref,
                                    alt = alt,
                                    varPos = varPos,
@@ -453,93 +538,7 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   return(outInfo)
 }
 
-###############################################################################
-
-# Load argument parser
-library(optparse)
-
-# Arguments
-option_list = list(
-  make_option(c("-i", "--in_vcf"), type="character", default=NULL, 
-              help="Input vcf file direct from SpliceAI", metavar="FILE"),
-  make_option(c("-g", "--gene_list"), type="character", default=NULL, 
-              help="Gene list, tab-separated with two columns - Gene and RefSeq_ID", 
-              metavar="FILE"),
-  make_option(c("-o", "--out_file"), type="character", default="out.tsv", 
-              help="output file name [default= %default]", metavar="FILE"),
-  make_option("--DS_AGDG_MIN_T", type="character", default=0.02, 
-              help="Delta score (acceptor & donor gain) - minimum [default= %default]", 
-              metavar="NUMERIC"),  
-  make_option("--DS_AGDG_MAX_T", type="character", default=0.05, 
-              help="Delta score (acceptor & donor gain) - maximum [default= %default]",
-              metavar="NUMERIC"), 
-  make_option("--GEX_size_MIN", type="character", default=25, 
-              help="Gained exon size range - minimum [default= %default]",
-              metavar="INT"), 
-  make_option("--GEX_size_MAX", type="character", default=500, 
-              help="Gained exon size range - maximum [default= %default]",
-              metavar="INT"), 
-  make_option("--DS_ALDL_MIN_T", type="character", default=0.02, 
-              help="Delta score (acceptor & donor loss)  - minimum [default= %default]", 
-              metavar="NUMERIC"), 
-  make_option("--DS_ALDL_MAX_T", type="character", default=0.2, 
-              help="Delta score (acceptor & donor loss) - maximum [default= %default]",
-              metavar="NUMERIC"), 
-  make_option("--AG_T", type="character", default=0.2, 
-              help="Cryptic splice site - acceptor gain [default= %default]",
-              metavar="NUMERIC"), 
-  make_option("--DG_T", type="character", default=0.2, 
-              help="Cryptic splice site - donor gain [default= %default]",
-              metavar="NUMERIC"),
-  make_option(c("-r", "--refseq_table"), type="character", default=NULL, 
-              help="Optional: ncbiRefSeq table pre-downloaded from ucsc", 
-              metavar="FILE"),
-  make_option(c("--out_refseq"), type="character", default=NULL, 
-              help="Optional: save downloaded ncbiRefSeq table", 
-              metavar="FILE"),
-  make_option("--ref", type="character", default="hg19",
-              help="Optional: reference genome (hg19 or hg38) [default= %default]",
-              metavar="STRING")
-); 
-
-opt_parser = OptionParser(option_list=option_list);
-opt = parse_args(opt_parser);
-
-# Load required libraries
-library(tidyverse, quietly=TRUE)
-library(Biostrings, quietly = TRUE)
-
-# Load all arguments as variables
-DS_AGDG_MIN_T <- opt$DS_AGDG_MIN_T
-DS_AGDG_MAX_T <- opt$DS_AGDG_MAX_T
-GEX_size_MIN <- opt$GEX_size_MIN
-GEX_size_MAX <- opt$GEX_size_MAX
-DS_ALDL_MIN_T <-opt$DS_ALDL_MIN_T
-DS_ALDL_MAX_T <- opt$DS_ALDL_MAX_T
-AG_T <- opt$AG_T
-DG_T <- opt$DG_T
-input <- read_tsv(opt$in_vcf, comment="##", col_types = c(`#CHROM` = "c"))
-genes <- read_tsv(opt$gene_list)
-output_file <- opt$out_file
-refseq_table_file <- opt$refseq_table
-output_refseq <- opt$out_refseq
-ref_genome <- opt$ref
-
-## Troubleshooting
-# DS_AGDG_MIN_T <- 0.02
-# DS_AGDG_MAX_T <- 0.05
-# GEX_size_MIN <- 25
-# GEX_size_MAX <- 500
-# DS_ALDL_MIN_T <- 0.02
-# DS_ALDL_MAX_T <- 0.2
-# AG_T <- 0.2
-# DG_T <- 0.2
-# input <- read_tsv("./example_variants.vcf",comment="##")
-# genes <- read_tsv("./example_gene_list.txt")
-# output_file <- "./example_variants_parsed.tsv"
-# ref_genome <- "hg19"
-
-###############################################################################
+################## Genome version ##############################################
 
 if (ref_genome == "hg19") {
   library(BSgenome.Hsapiens.UCSC.hg19, quietly = TRUE)
@@ -551,17 +550,25 @@ if (ref_genome == "hg19") {
 
 cat("\nReference genome used: ",ref_genome,"\n")
 
-###############################################################################
+################## Load input ##################################################
 
 cat("\nPre-processing input\n")
 
-# Splitting info field
+
 input_splice_all <- input %>%
+  # Splitting SpliceAI predictions if multiple transcripts included
+  separate_rows(INFO, sep = ",") %>%
+  # Splitting info field
   separate(INFO, 
            into = c("ALLELE","SYMBOL","DS_AG","DS_AL","DS_DG",
                     "DS_DL","DP_AG","DP_AL","DP_DG","DP_DL"), 
            sep="[|]",
-           fill="right")
+           fill="right") %>%
+  mutate(ALLELE = if_else((str_detect(ALLELE,"SpliceAI=") | ALLELE == "."),
+                           ALLELE,
+                           paste0("SpliceAI=",ALLELE))) %>%
+  # Stripping "chr" in case vcf contains "chr"
+  mutate(`#CHROM` = as.character(str_remove(`#CHROM`,"chr")))
 
 # Only including variants with SPLICE AI annotation & SNVs
 input_splice_annot <- input_splice_all %>% 
@@ -575,57 +582,20 @@ input_splice_other <- input_splice_all %>%
   mutate_at(vars(c("DS_AG","DS_AL","DS_DG","DS_DL",
                    "DP_AG","DP_AL","DP_DG","DP_DL")), ~NA_real_)
 
-###############################################################################
+################## Prepare transcripts #########################################
 
-cat("\nPre-processing transcript list\n")
+cat("\nPrepare transcripts\n")
 
-
-# Using the supplied gene list with RefSeq IDs to download the full UCSC 
-# ncbiRefSeq table, and then subset by transcripts of interest.
-genes <- genes %>%
-  separate(RefSeq_ID, into = c("RefSeq_ID_no_v"), sep = "[.]", 
-           extra = "drop", remove = FALSE)
-
-
-if (is.null(refseq_table_file)) {
-  library(rtracklayer, quietly=TRUE)
-  query <- ucscTableQuery(ref_genome, table = "ncbiRefSeq")
-  refseq_table <- getTable(query)
-
-} else {
-  refseq_table <- read_tsv(refseq_table_file, col_types = cols(.default = "c"))
-  head(refseq_table)
-}
-
-if (!is.null(output_refseq)){
-  write_tsv(refseq_table, output_refseq)
-}
-
-
-refseq_table <- refseq_table %>%
-  separate(name, into = c("refseq_nov","refseq_version"), 
-           sep = "[.]", extra = "drop", remove = FALSE)
-
-refseq_table_filtered <- refseq_table %>%
-  right_join(genes, by = c("refseq_nov"="RefSeq_ID_no_v")) %>%
-  filter(!str_detect(chrom, "_")) %>% 
-  mutate(refseq_match = if_else(RefSeq_ID == name, TRUE, FALSE))
-
-cat("The following RefSeq ID versions have been updated")
-refseq_table_filtered %>%
-  filter(!refseq_match) %>%
-  dplyr::rename(RefSeq_found = name, RefSeq_submitted = RefSeq_ID) %>% 
-  dplyr::select(RefSeq_submitted,RefSeq_found)
-
-refseq_table_filtered_expanded <- refseq_table_filtered %>%
+refseq_table_expanded <- refseq_table %>%
   separate_rows(exonStarts, exonEnds, exonFrames, sep = ",", convert=TRUE) %>%
   filter(exonStarts != "") %>% 
-  mutate(chrom_nochr = str_remove(chrom,"chr")) %>% 
+ # mutate(chrom_nochr = str_remove(chrom,"chr")) %>% 
   mutate(strand = if_else(strand == "-", -1, 1))
+
 
 # Reformatting transcript table to have previous and next exons and 
 # introns as columns (with exon and intron numbering).
-refseq_boundaries <- refseq_table_filtered_expanded %>%
+refseq_boundaries <- refseq_table_expanded %>%
   group_by(name) %>%
   arrange(exonStarts) %>%
   mutate(exon_num_chrom = row_number(),
@@ -662,14 +632,27 @@ refseq_boundaries <- refseq_table_filtered_expanded %>%
   mutate(exon_size = as.integer(eEnd - eStart),
          intron_size = as.integer(intronEnd - intronStart))
 
-###############################################################################
+################## Perform calculations ########################################
 
 cat("\nPerforming calculations\n")
 
+# Depending on how SpliceAI was run (default or with supplied transcripts)
+# the transcript table will be matched accordingly
+if(str_detect(input_splice_annot$SYMBOL[1],"^RefSeqTx-")){
+  refseq_boundaries <- refseq_boundaries %>%
+    mutate(chrom = str_remove(chrom,"chr")) %>% # REMOVE
+    mutate(SYMBOL = paste0("RefSeqTx-", name))
+  
+}else if(!str_detect(input_splice_annot$SYMBOL[1],"^RefSeqTx-")){
+  refseq_boundaries <- refseq_boundaries %>%
+    mutate(chrom = str_remove(chrom,"chr")) %>% # REMOVE
+    mutate(SYMBOL = Gene)
+}
+
 # Combining variant table with transcripts table
 input_splice_distance <- input_splice_annot %>%
-  left_join(refseq_boundaries, by = c("#CHROM" = "chrom_nochr",
-                                      "SYMBOL" = "Gene")) %>%
+  left_join(refseq_boundaries, by = c("#CHROM" = "chrom",
+                                      "SYMBOL" = "SYMBOL")) %>%
   group_by(ID) %>%
   # -1 is to account for 0-based position
   mutate(dist_exon_start = as.numeric(POS) - as.numeric(eStart) -1,
@@ -798,7 +781,7 @@ output <- output %>%
   mutate_at(vars(c(GEX_size, GEX_predict, LEX_predict, RET_predict)),
             ~ replace_na(as.character(.),"FAIL"))
 
-###############################################################################
+################## Add additional information ##################################
 
 # Add additional psuedoexon activation information
 output <- output %>%
@@ -883,6 +866,7 @@ output <- output %>%
 
 cat("\nExtracting amino sequence predictions\n")
 
+
 # Calculate the predicted amino acid sequence changes
 # for partial intron retention
 output <- output %>%
@@ -948,7 +932,7 @@ output <- output %>%
                                                            alt = ALT),"-"))
 
 
-###############################################################################
+################## Write output ################################################
 
 cat("\nWriting output\n")
 
