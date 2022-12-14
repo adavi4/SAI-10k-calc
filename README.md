@@ -12,7 +12,7 @@ If you use the parser, please cite our pre-print: [TBD]
 
 **Authors:**  
 Daffodil Canson - developed the parser   
-Aimee Davidson - implemented the parser in R and added extra functionality
+Aimee Davidson - implemented the parser in R and added extra functionality   
 Olga Kondrashova - implemented the parser in R  
 *QIMR Berghofer Medical Research Insititute*
 
