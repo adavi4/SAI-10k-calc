@@ -433,6 +433,9 @@ get_retention_SEQ <- function(refseqTable,intron,frameshift,transcript,varPos,re
   consensusTable = make_consensus_table(transcript,refseqTable,filterNONCOD = TRUE)
   retentionTable = consensusTable
   strand = consensusTable$strand[[1]]
+  # pull out the CDS start and stop
+  cdsStartPos = as.integer(consensusTable$cdsStart[[1]])+1
+  cdsEndPos = as.integer(consensusTable$cdsEnd[[1]])
   # extract appropriate positions to add the intron to transcript table
   currentChr = retentionTable$chrom[[1]]
   if (strand == 1) {
@@ -465,6 +468,13 @@ get_retention_SEQ <- function(refseqTable,intron,frameshift,transcript,varPos,re
   retentionTable = retentionTable %>% dplyr::select(., -c("rows")) %>% 
     dplyr::rename("rows" = "new_rows") %>% 
     mutate_at(vars(c("rows")), ~as.numeric(.))
+  # correct for CDS positioning in both tables
+  retentionTable <- retentionTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsStartPos, cdsStartPos, eStartAdj),
+           eEnd = ifelse(eEnd > cdsEndPos, cdsEndPos, eEnd))
+  consensusTable <- consensusTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsStartPos, cdsStartPos, eStartAdj),
+           eEnd = ifelse(eEnd > cdsEndPos, cdsEndPos, eEnd))
   # remove any but the immediate upstream exon
   retentionTable <- retentionTable %>% ungroup() %>%
     dplyr::slice(., ((rowNumber-1):n()))
