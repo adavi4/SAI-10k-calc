@@ -4,7 +4,7 @@
 
 ## 1. About
 SpliceAI post-processing calculator. Requires two files: 
-* VCF files
+* VCF file - preferred (or SpliceAI output - VCF)
 * List of genes and transcripts of interest
 
 
@@ -21,19 +21,19 @@ Olga Kondrashova - implemented the parser in R
 **Software Requirements:**  
 
 * R version 4.1.2
-* htslib (v1.9)
-* SpliceAI (v1.3.1)
 * R packages:  
 	- tidyverse
 	- optparse
 	- rtracklayer
 	- Biostrings
-	- BSgenome.Hsapiens.UCSC.hg19 or BSgenome.Hsapiens.UCSC.hg38
+	- BSgenome.Hsapiens.UCSC.hg19 (or BSgenome.Hsapiens.UCSC.hg38)
+* htslib 1.9 (for running SpliceAI)
+* SpliceAI 1.3.1 (for running SpliceAI)
 
 
 ## 3. Usage and Program Options
 
-**Step 1.** Run _download_tx.R_ script to download and pre-process transcript tables:
+**Step 1.** Run `download_tx.R` script to download and pre-process transcript tables:
 
 `Rscript download_tx.R -g example_gene_list.txt --out_refseq example_refseq_tx_hg19.txt --out_tx_spliceai example_spliceai_tx_hg19.txt`
 
@@ -64,12 +64,13 @@ Options:
 		Show this help message and exit
 
 
-**Step 2.** Run spliceAI using the pre-processed transcript table (example_spliceai_tx_hg19.txt) from the first script. Check the example script _run_splice_ai.sh_
+**Step 2.** Run SpliceAI using the pre-processed transcript table (example_spliceai_tx_hg19.txt) from the first script. Check the example script `run_splice_ai.sh`.   
+  
+It is recommended to run [SpliceAI](https://github.com/Illumina/SpliceAI) with a custom annotation file (pre-processed transcript table) using `-A` flag, because predictions for specific transcripts may differ from GENCODE V24 canonical transcript predictions (SpliceAI default). 
 
-**Step 3.** Run _spliceAI_parser.R_ script using the pre-processed transcript table from Step 1 (example_refseq_tx_hg19.txt) and the SpliceAI output vcf file.
+**Step 3.** Run `spliceAI_parser.R` script using the pre-processed transcript table from Step 1 (example_refseq_tx_hg19.txt) and the SpliceAI output vcf file.
 
 `Rscript spliceAI_parser.R -i example_variants.vcf -r example_refseq_tx_hg19.txt -o example_variants_parsed.tsv`
-
 
 Full options are available by running:
 
