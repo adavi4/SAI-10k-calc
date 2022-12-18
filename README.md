@@ -4,7 +4,7 @@
 
 ## 1. About
 SpliceAI post-processing calculator. Requires two files: 
-* SpliceAI output
+* VCF files
 * List of genes and transcripts of interest
 
 
