@@ -4,13 +4,12 @@
 ## Developed by Daffodil Canson
 ## Implemented in R by Olga Kondrashova & Aimee Davidson
 ## Functionality extended by Aimee Davidson
-## Date: 12/12/2022
+## Date: 14/12/2022
 
 ################## Load libraries and arguments ################################
 
 # Load options parser
 library(optparse, quietly = TRUE)
-
 
 # Arguments
 option_list = list(
@@ -70,7 +69,6 @@ input <- read_tsv(opt$in_vcf, comment="##",
                   col_types = c(`#CHROM` = "c"))
 refseq_table <- read_tsv(opt$refseq_table,
                          col_types = cols(.default = "c"))
-genes <- read_tsv(opt$gene_list)
 output_file <- opt$out_file
 ref_genome <- opt$ref
 
@@ -85,7 +83,6 @@ ref_genome <- opt$ref
 # DG_T <- 0.2
 # input <- read_tsv("./example_variants.vcf",comment="##",
 #                   col_types = c(`#CHROM` = "c"))
-# genes <- read_tsv("./example_gene_list.txt")
 # refseq_table <- read_tsv("./example_refseq_tx.txt",
 #                          col_types = cols(.default = "c"))
 # output_file <- "./example_variants_parsed.tsv"
@@ -145,36 +142,8 @@ find_difference_point <- function(seqA,seqB,direction) {
 make_consensus_table <- function(transcript,refseqTab,filterNONCOD=TRUE) {
   # Extract the single transcript
   transcriptTab <- refseqTab %>%
+    ungroup %>%
     filter(., `name` == transcript)
-  # Now correct table to account for CDS Start and End
-  cdsStartPos <- as.integer(transcriptTab$cdsStart[[1]])
-  cdsEndPos <- as.integer(transcriptTab$cdsEnd[[1]])
-  cdsStartExon = filter(transcriptTab, eStart <= cdsStartPos & eEnd >= cdsStartPos) %>% 
-    dplyr::select(., name, eStart, eEnd, eNum, strand, chrom)
-  cdsEndExon = filter(transcriptTab, eStart <= cdsEndPos & eEnd >= cdsEndPos) %>% 
-    dplyr::select(., name, eStart, eEnd, eNum, eFrame, intronStart, intronEnd, intron_num, prev_eFrame)
-  # modify the existing exons
-  transcriptTab <- transcriptTab %>%
-    mutate(eStart = ifelse(eNum == cdsStartExon$eNum, cdsStartPos, eStart),
-           eStart = ifelse(eNum == cdsEndExon$eNum, cdsEndPos, eStart),
-           eFrame = ifelse(eNum == cdsEndExon$eNum, -1, eFrame),
-           prev_eFrame = ifelse(eNum == cdsEndExon$eNum, NA_integer_, prev_eFrame),
-           intronStart = ifelse(eNum == cdsEndExon$eNum, NA_integer_, intronStart),
-           intronEnd = ifelse(eNum == cdsEndExon$eNum, NA_integer_, intronEnd),
-           intron_num = ifelse(eNum == cdsEndExon$eNum, NA_integer_, intron_num))
-  # add new non-coding exons
-  transcriptTab <- transcriptTab %>%
-    ungroup() %>%
-    add_row(., eStart = cdsStartExon$eStart, eEnd = cdsStartPos, eFrame = -1, 
-            eNum = cdsStartExon$eNum, strand = cdsStartExon$strand, 
-            chrom = cdsStartExon$chrom) %>%
-    add_row(., eStart = cdsEndExon$eStart, eEnd = cdsEndPos, 
-            eFrame = cdsEndExon$eFrame, eNum = cdsEndExon$eNum, 
-            prev_eFrame = cdsEndExon$prev_eFrame, 
-            strand = cdsStartExon$strand, chrom = cdsStartExon$chrom,
-            intronStart = cdsEndExon$intronStart, intronEnd = cdsEndExon$intronEnd,
-            intron_num = cdsEndExon$intron_num) %>%
-    arrange(., eStart) 
   # now correct for the zero UCSC positioning
   transcriptTab <- transcriptTab %>%
     mutate(eStartAdj = case_when(is.na(eStart) ~ NA_integer_,
@@ -193,6 +162,7 @@ make_consensus_table <- function(transcript,refseqTab,filterNONCOD=TRUE) {
   }
   return(transcriptTab)
 }
+
 
 # Extract the intron that is retained with complete intron retention
 find_retained_intron <- function(ALpos,DLpos,transcript,refseqTab) {
@@ -218,9 +188,9 @@ find_pseudoexon_position <- function(DGpos,AGpos,strand,refseqTab,transcript) {
   # select exon info for transcript
   intronTab <- make_consensus_table(transcript,refseqTab,filterNONCOD = FALSE)
   if (strand == 1) {
-    intronnum = filter(intronTab, intronStart+51 <= AGpos & intronEndAdj-51 >= DGpos)
+    intronnum = filter(intronTab, intronStart+50 < AGpos & intronEndAdj-50 > DGpos)
   } else {
-    intronnum = filter(intronTab, intronStart+51 <= DGpos & intronEndAdj-51 >= AGpos)
+    intronnum = filter(intronTab, intronStart+50 < DGpos & intronEndAdj-50 > AGpos)
   }
   # find intron and intron type
   # exclude if branches multiple introns
@@ -263,37 +233,94 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
   # correct the start site, from ucsc table format
   consensusStart = consensusStart+1
   consensusTable = make_consensus_table(transcript,refseqTable,filterNONCOD = TRUE)
-  # pull out the CDS start and stop for some extra screens for sequence prediction
-  cdsStartPos = consensusTable$cdsStart[[1]]
-  cdsEndPos = consensusTable$cdsEnd[[1]]
-  # perform some pre-emptive checks for partial exon deletion and partial intron retention
+  # pull out the CDS start and stop
+  cdsStartPos = as.integer(consensusTable$cdsStart[[1]])+1
+  cdsEndPos = as.integer(consensusTable$cdsEnd[[1]])
+  # check for partial end movement to before the start
   if(partialEnd-partialStart <= 0) {
     return("deletion greater than exon size")
   }
-  if(partialStart < cdsStartPos | partialEnd > cdsEndPos) {
-    return("impacts native start or stop site")
-  }
+  # now manipulate the table to include the altered partial exon
+  # under assumption partial has already been corrected for ucsc 1-base start
   partialTable = consensusTable
   strand = consensusTable$strand[[1]]
   if (strand == -1) {
     partialTable = partialTable %>% arrange(., desc(eStartAdj))
   }
-  # for variants affecting the first or last coding exon
-  if (partialStart == as.integer(cdsStartPos)) {
-    consensusStart = as.integer(cdsStartPos+1)
-  }
-  if (partialEnd == as.integer(cdsEndPos)) {
-    consensusEnd = as.integer(cdsEndPos)
-  }
-  rowNumber = which(partialTable$eStartAdj==consensusStart & partialTable$eEnd == consensusEnd)
-  # if can't find the target/affected exons then return that the table is "empty"
-  if(is_empty(rowNumber)) {
+  rowNumber = which(partialTable$eStartAdj==consensusStart | partialTable$eEnd == consensusEnd)
+  # if can't find the target/affected exons then assume an entirely non-coding exon
+  if (is_empty(rowNumber)) {
     return("does not affect coding region")
-  } else {
+  }
+  # now for variants altering the first or last coding exon
+  # find first and last coding exon
+  cdsStartRow = which(partialTable$eStart <= cdsStartPos & partialTable$eEnd >= cdsStartPos)
+  cdsEndRow = which(partialTable$eStart <= cdsEndPos & partialTable$eEnd >= cdsEndPos)
+  # first coding exon is altered
+  if (rowNumber == cdsStartRow) {
+    # for changes to start of exon (non-coding portion)
+    if (partialStart != partialTable$eStartAdj[[rowNumber]] & partialEnd == partialTable$eEnd[[rowNumber]]) {
+      if (partialStart > cdsStartPos) {
+        # start site is altered
+        return("impacts native start of stop site")
+      } else if (partialStart <= cdsStartPos) {
+        return ("does not affect coding region")
+      } else {
+        # shift exon start to coding start for aaseq prediction
+        partialTable$eStartAdj[rowNumber] = cdsStartPos
+      }
+      # for changes to end of the exon (coding portion)
+    } else if (partialStart == partialTable$eStartAdj[[rowNumber]] & partialEnd != partialTable$eEnd[[rowNumber]]) {
+      # start site is deleted (any of 3 start site bases)
+      if (partialEnd < cdsStartPos) {
+        return("impacts native start of stop site")
+      } else {
+        partialTable$eStartAdj[rowNumber] = cdsStartPos
+        partialTable$eEnd[rowNumber] = partialEnd
+      }
+    } else {
+      return("cannot determine")
+    }
+  }
+  # last coding exon is altered
+  if (rowNumber == cdsEndRow) {
+    # for changes to start of exon (coding portion)
+    if (partialStart != partialTable$eStartAdj[[rowNumber]] & partialEnd == partialTable$eEnd[[rowNumber]]) {
+      if (partialStart > cdsEndPos) {
+        # stop site is altered
+        return("impacts native start of stop site")
+      } else {
+        # shift exon end to coding end for aaseq prediction
+        partialTable$eEnd[rowNumber] = cdsEndPos
+        partialTable$eStartAdj[rowNumber] = partialStart
+      }
+      # for changes to end of the exon (non-coding portion)
+    } else if (partialStart == partialTable$eStartAdj[[rowNumber]] & partialEnd != partialTable$eEnd[[rowNumber]]) {
+      # stop site is deleted 
+      if (partialEnd < cdsEndPos) {
+        return("impacts native start of stop site")
+      } else if (partialEnd >= cdsEndPos) {
+        return ("does not affect coding region")
+      } else {
+        partialTable$eEnd[rowNumber] = cdsEndPos
+      }
+    } else {
+      return("cannot determine")
+    }
+  }
+  # for all other middle coding exons
+  if (cdsStartRow != rowNumber & cdsEndRow != rowNumber) {
     # update the transcript table with the altered start and stop
     partialTable$eStartAdj[rowNumber] = partialStart
     partialTable$eEnd[rowNumber] = partialEnd
-  }  
+  }
+  # correct for CDS positioning in both tables
+  partialTable <- partialTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsStartPos, cdsStartPos, eStartAdj),
+           eEnd = ifelse(eEnd > cdsEndPos, cdsEndPos, eEnd))
+  consensusTable <- consensusTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsStartPos, cdsStartPos, eStartAdj),
+           eEnd = ifelse(eEnd > cdsEndPos, cdsEndPos, eEnd))  
   # remove any but the immediate upstream exon
   partialTable <- partialTable %>% ungroup() %>%
     dplyr::slice(., ((rowNumber-1):n()))
@@ -304,18 +331,25 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
 
 # Extract the changed amino acid sequence for exon skipping
 get_skip_SEQ <- function(exons,refseqTable,frameshift,transcript,varPos,ref,alt){
+  if (is.na(exons)) {
+    return("lost site/s do not match consensus")
+  }
   consensusTable = make_consensus_table(transcript,refseqTable,filterNONCOD=FALSE)
   skipTable = consensusTable
   exonsList = purrr::flatten(str_split(exons, ","))
   exonsList = as.numeric(exonsList)
-  # check for whether coding exons are lost
+  # check for whether only non-coding exons are lost
   skippedExons = skipTable %>% filter(., eNum %in% exonsList)
-  if (-1 %in% skippedExons$eFrame) {
-    if (max(skippedExons$eFrame)>=0) {
-      return("native start or stop is lost")
-    } else {
-      return("non-coding exons lost")
-    }
+  if (all(skippedExons$eFrame %in% c(-1))) {
+    return("non-coding exons lost")
+  }
+  # check for whether start or stop is lost
+  cdsstart = as.integer(skippedExons$cdsStart[[1]])+1
+  cdsend = as.integer(skippedExons$cdsEnd[[1]])
+  startPos = which(cdsstart >= skippedExons$eStart & cdsstart <= skippedExons$eEnd)
+  endPos = which(cdsend >= skippedExons$eStart & cdsend <= skippedExons$eEnd)
+  if (is_empty(startPos) == FALSE | is_empty(endPos) == FALSE) {
+    return("native start or stop is lost")
   }
   # remove skipped exons
   # and also remove non-coding exons now that are accounted for
@@ -328,15 +362,20 @@ get_skip_SEQ <- function(exons,refseqTable,frameshift,transcript,varPos,ref,alt)
     skipTable = skipTable %>% arrange(., desc(eStartAdj))
   }
   rowNumber = which(skipTable$eNum==minExon)
+  # correct for CDS positioning in both tables
+  skipTable <- skipTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj <= cdsstart, cdsstart, eStartAdj),
+           eEnd = ifelse(eEnd >= cdsend, cdsend, eEnd))
+  consensusTable <- consensusTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj <= cdsstart, cdsstart, eStartAdj),
+           eEnd = ifelse(eEnd >= cdsend, cdsend, eEnd)) 
   # remove any but the immediate upstream exon
-  if (is_empty(rowNumber)) {
-    return("lost site/s do not match consensus")
-  }
   skipTable <- skipTable %>% ungroup() %>%
     dplyr::slice(., (rowNumber:n()))
   predictSEQ = determine_aaSEQ(skipTable,consensusTable,frameshift,varPos,ref,alt)
   return(predictSEQ)
 }
+
 
 
 # Format the refseq table to reflect the pseudoexon activation impact
@@ -350,8 +389,8 @@ get_pseudo_SEQ <- function(pseudoStart,pseudoEnd,refseqTable,frameshift,
   strand = consensusTable$strand[[1]]
   currentChr = pseudoTable$chrom[[1]]
   # check whether pseudoexon is within coding region
-  cdsstart = min(consensusTable$cdsStart, na.rm = TRUE)
-  cdsend = min(consensusTable$cdsEnd, na.rm = TRUE)
+  cdsstart = as.integer(min(consensusTable$cdsStart, na.rm = TRUE))+1
+  cdsend = as.integer(min(consensusTable$cdsEnd, na.rm = TRUE))
   if (!(pseudoStart >= cdsstart & pseudoEnd <= cdsend)) {
     return("non-coding pseudoexon")
   }
@@ -371,10 +410,16 @@ get_pseudo_SEQ <- function(pseudoStart,pseudoEnd,refseqTable,frameshift,
   rowNumber = pseudoTable %>% filter(is.na(rows)) %>% 
     mutate_at(vars(c("new_rows")), ~as.numeric(.)) %>% 
     pull(., new_rows)
+  # correct for CDS positioning in both tables
+  pseudoTable <- pseudoTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsstart, cdsstart, eStartAdj),
+           eEnd = ifelse(eEnd > cdsend, cdsend, eEnd))
+  consensusTable <- consensusTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsstart, cdsstart, eStartAdj),
+           eEnd = ifelse(eEnd > cdsend, cdsend, eEnd)) 
   # remove any but the immediate upstream exon
   pseudoTable <- pseudoTable %>% ungroup() %>%
     dplyr::slice(., ((rowNumber-1):n()))
-  
   predictSEQ = determine_aaSEQ(pseudoTable,consensusTable,frameshift,varPos,ref,alt)
   return(predictSEQ)
 }
@@ -388,6 +433,9 @@ get_retention_SEQ <- function(refseqTable,intron,frameshift,transcript,varPos,re
   consensusTable = make_consensus_table(transcript,refseqTable,filterNONCOD = TRUE)
   retentionTable = consensusTable
   strand = consensusTable$strand[[1]]
+  # pull out the CDS start and stop
+  cdsStartPos = as.integer(consensusTable$cdsStart[[1]])+1
+  cdsEndPos = as.integer(consensusTable$cdsEnd[[1]])
   # extract appropriate positions to add the intron to transcript table
   currentChr = retentionTable$chrom[[1]]
   if (strand == 1) {
@@ -420,6 +468,13 @@ get_retention_SEQ <- function(refseqTable,intron,frameshift,transcript,varPos,re
   retentionTable = retentionTable %>% dplyr::select(., -c("rows")) %>% 
     dplyr::rename("rows" = "new_rows") %>% 
     mutate_at(vars(c("rows")), ~as.numeric(.))
+  # correct for CDS positioning in both tables
+  retentionTable <- retentionTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsStartPos, cdsStartPos, eStartAdj),
+           eEnd = ifelse(eEnd > cdsEndPos, cdsEndPos, eEnd))
+  consensusTable <- consensusTable %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsStartPos, cdsStartPos, eStartAdj),
+           eEnd = ifelse(eEnd > cdsEndPos, cdsEndPos, eEnd))
   # remove any but the immediate upstream exon
   retentionTable <- retentionTable %>% ungroup() %>%
     dplyr::slice(., ((rowNumber-1):n()))
@@ -847,21 +902,10 @@ output <- output %>%
                                       Partial_intron_retention == "YES" & strand == -1 & bp_5prime < 0 ~ as.integer(eEnd+abs(bp_5prime)),
                                       Partial_exon_deletion == "YES" & strand == 1 & bp_3prime < 0 ~ as.integer(eEnd-abs(bp_3prime)),
                                       Partial_exon_deletion == "YES" & strand == -1 & bp_5prime > 0 ~ as.integer(eEnd-bp_5prime),
-                                      TRUE ~ as.integer(eEnd)))
-
-# Now correct for partial start, ends for the CDS start, end
-output <- output %>%
-  rowwise() %>%
-  mutate_at(vars(c("cdsStart","cdsEnd")), ~as.integer(.)) %>%
-  mutate(Partial_exon_start = case_when(is.na(Partial_exon_start) ~ Partial_exon_start,
-                                        Partial_exon_start <= (cdsStart+1) ~ as.integer(cdsStart+1),
-                                        TRUE ~ Partial_exon_start),
-         Partial_exon_end = case_when(is.na(Partial_exon_end) ~ Partial_exon_end,
-                                      Partial_exon_end >= cdsEnd ~ cdsEnd,
-                                      TRUE ~ Partial_exon_end)) %>%
-  mutate(Partial_frameshift = case_when(is.na(Partial_exon_start) == TRUE & is.na(Partial_exon_end) == TRUE ~ as.character(NA),
+                                      TRUE ~ as.integer(eEnd)),
+         Partial_frameshift = case_when(is.na(Partial_exon_start) == TRUE & is.na(Partial_exon_end) == TRUE ~ as.character(NA),
                                         abs(bp_5prime+bp_3prime) %% 3 != 0 ~ "YES",
-                                        TRUE ~ "NO"))  
+                                        TRUE ~ "NO"))
 
 
 cat("\nExtracting amino sequence predictions\n")
@@ -930,6 +974,16 @@ output <- output %>%
                                                            varPos = POS,
                                                            ref = REF,
                                                            alt = ALT),"-"))
+
+# clean up the partial frameshift column
+output <- output %>%
+  rowwise() %>%
+  mutate(Partial_frameshift = case_when(Partial_exon_deletion_aaseq == "deletion greater than exon size" ~ NA_character_,
+                                        Partial_exon_deletion_aaseq == "does not affect coding region" ~ NA_character_,
+                                        Partial_exon_deletion_aaseq == "impacts native start of stop site" ~ NA_character_,
+                                        Partial_exon_deletion_aaseq == "cannot determine" ~ NA_character_,
+                                        TRUE ~ Partial_frameshift))
+
 
 
 ################## Write output ################################################

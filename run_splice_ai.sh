@@ -12,6 +12,6 @@ tabix -p vcf example_variants.vcf.gz
 # run spliceAI
 spliceai -I example_variants.vcf.gz \
 -O ./example_variants.spliceAI.vcf \
--R ./GRCh37_ICGC_standard_v2.fa \
--A ./example_refseq_tx.txt \
+-R ./hg19.fa \
+-A ./example_spliceai_tx.txt \
 -D 4999
