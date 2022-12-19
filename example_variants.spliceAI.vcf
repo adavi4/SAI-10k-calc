@@ -1,0 +1,18 @@
+##fileformat=VCFv4.1
+##FILTER=<ID=PASS,Description="All filters passed">
+##contig=<ID=1,length=249250621,assembly=b37>
+##reference=file:///path/to/human_g1k_v37.fasta
+##contig=<ID=13>
+##contig=<ID=17>
+##INFO=<ID=SpliceAI,Number=.,Type=String,Description="SpliceAIv1.3.1 variant annotation. These include delta scores (DS) and delta positions (DP) for acceptor gain (AG), acceptor loss (AL), donor gain (DG), and donor loss (DL). Format: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+13	32889805	BRCA2_c.-40+1G>A	G	A	.	PASS	SpliceAI=A|RefSeqTx-NM_000059.4|0.01|0.08|0.57|0.99|-38|754|-100|-1
+13	32890533	BRCA2_c.-39-26G>A	G	A	.	PASS	SpliceAI=A|RefSeqTx-NM_000059.4|0.02|0.02|0.10|0.09|26|-193|-110|-5
+13	32890600	BRCA2_c.3G>A	G	A	.	PASS	SpliceAI=A|RefSeqTx-NM_000059.4|0.00|0.00|0.01|0.01|-156|2614|-9|-177
+13	32890637	BRCA2_c.40A>G	A	G	.	PASS	SpliceAI=G|RefSeqTx-NM_000059.4|0.01|0.01|0.04|0.04|-78|-193|-214|-109
+13	32890665	BRCA2_c.67+1G>A	G	A	.	PASS	SpliceAI=A|RefSeqTx-NM_000059.4|0.00|0.81|0.17|0.98|-221|-106|-137|-1
+17	41197774	BRCA1_c.5513T>G	A	C	.	PASS	SpliceAI=C|RefSeqTx-NM_007294.4|0.01|0.01|0.02|0.01|295|45|-95|1886
+17	41197824	BRCA1_c.5468-5T>A	A	T	.	PASS	SpliceAI=T|RefSeqTx-NM_007294.4|0.01|0.01|0.03|0.01|245|-5|-145|1836
+17	41197829	BRCA1_c.5468-10C>A	G	T	.	PASS	SpliceAI=T|RefSeqTx-NM_007294.4|0.01|0.01|0.02|0.01|240|-10|-150|1831
+17	41199655	BRCA1_c.5467+5G>C	C	G	.	PASS	SpliceAI=G|RefSeqTx-NM_007294.4|0.00|0.28|0.00|0.27|5|65|-1976|5
+17	41199659	BRCA1_c.5467+1G>A	C	T	.	PASS	SpliceAI=T|RefSeqTx-NM_007294.4|0.00|0.40|0.36|0.93|-4|61|-4|1
