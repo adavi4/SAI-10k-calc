@@ -708,7 +708,7 @@ if(str_detect(input_splice_annot$SYMBOL[1],"^RefSeqTx-")){
 input_splice_distance <- input_splice_annot %>%
   left_join(refseq_boundaries, by = c("#CHROM" = "chrom",
                                       "SYMBOL" = "SYMBOL")) %>%
-  group_by(ID) %>%
+  group_by(ID,SYMBOL) %>%
   # -1 is to account for 0-based position
   mutate(dist_exon_start = as.numeric(POS) - as.numeric(eStart) -1,
          dist_exon_end = as.numeric(POS) - as.numeric(eEnd)) %>%
@@ -718,7 +718,7 @@ input_splice_distance <- input_splice_annot %>%
   mutate(dist_exon_closest_abs = min(abs(dist_exon_start), 
                                          abs(dist_exon_end))) %>% 
   ungroup() %>% 
-  group_by(ID) %>% 
+  group_by(ID,SYMBOL) %>% 
   # keeping only the exon that is the closest and not all other exons
   filter(dist_exon_closest_abs == min(dist_exon_closest_abs)) %>% 
   # adding directional distance from exon, not absolute distance
