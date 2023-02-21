@@ -237,7 +237,7 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
   cdsStartPos = as.integer(consensusTable$cdsStart[[1]])+1
   cdsEndPos = as.integer(consensusTable$cdsEnd[[1]])
   # check for partial end movement to before the start
-  if(partialEnd-partialStart <= 0) {
+  if((partialEnd-partialStart)+1 <= 0) {
     return("deletion greater than exon size")
   }
   # now manipulate the table to include the altered partial exon
@@ -773,17 +773,24 @@ output <- output %>%
          Cryptic_Donor_activation = if_else(DS_DG >= DG_T & DS_DG > DS_AG,
                                             "YES", "NO")) 
 
+# Orientation check for partial retention and deletions
+output <- output %>%
+  rowwise() %>%
+  mutate(Cryptic_Acceptor_orientation = if_else((strand == 1 & prev_eEnd - GEO_AG < 0) | (strand == -1 & GEO_AG - (prev_eStart+1) < 0),"PASS", "FAIL"),
+         Cryptic_Donor_orientation = if_else((strand == 1 & GEO_DG - (next_eStart+1) < 0) | (strand == -1 & next_eEnd - GEO_DG < 0), "PASS", "FAIL"))
+
+
 # Predicted exon sizes
 output <- output %>% 
   rowwise() %>%
   mutate(Gained_exon_size = GEX_size,
          Lost_exon_size = LEX_predict,
          Retained_intron_size = RET_predict,
-         bp_5prime = case_when(Cryptic_Acceptor_activation == "YES" & strand == 1 ~ GEO_AG-(eStart+1),
-                               Cryptic_Acceptor_activation == "YES" & strand == -1 ~ eEnd-GEO_AG,
+         bp_5prime = case_when(Cryptic_Acceptor_activation == "YES" & strand == 1 & Cryptic_Acceptor_orientation == "PASS" ~ GEO_AG-(eStart+1),
+                               Cryptic_Acceptor_activation == "YES" & strand == -1 & Cryptic_Acceptor_orientation == "PASS" ~ eEnd-GEO_AG,
                                TRUE ~ 0),
-         bp_3prime = case_when(Cryptic_Donor_activation == "YES" & strand == 1 ~ GEO_DG-eEnd,
-                               Cryptic_Donor_activation == "YES" & strand == -1 ~ (eStart+1)-GEO_DG,
+         bp_3prime = case_when(Cryptic_Donor_activation == "YES" & strand == 1 & Cryptic_Donor_orientation == "PASS" ~ GEO_DG-eEnd,
+                               Cryptic_Donor_activation == "YES" & strand == -1 & Cryptic_Donor_orientation == "PASS" ~ (eStart+1)-GEO_DG,
                                TRUE ~ 0))
 
 # Placement of GEX
