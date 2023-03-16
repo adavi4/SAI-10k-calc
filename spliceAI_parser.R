@@ -273,7 +273,7 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
     } else if (partialStart == partialTable$eStartAdj[[rowNumber]] & partialEnd != partialTable$eEnd[[rowNumber]]) {
       # start site is deleted (any of 3 start site bases)
       if (partialEnd < cdsStartPos) {
-        return("impacts native start of stop site")
+        return("impacts native start or stop site")
       } else {
         partialTable$eStartAdj[rowNumber] = cdsStartPos
         partialTable$eEnd[rowNumber] = partialEnd
@@ -288,7 +288,7 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
     if (partialStart != partialTable$eStartAdj[[rowNumber]] & partialEnd == partialTable$eEnd[[rowNumber]]) {
       if (partialStart > cdsEndPos) {
         # stop site is altered
-        return("impacts native start of stop site")
+        return("impacts native start or stop site")
       } else {
         # shift exon end to coding end for aaseq prediction
         partialTable$eEnd[rowNumber] = cdsEndPos
