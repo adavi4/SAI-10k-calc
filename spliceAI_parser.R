@@ -97,6 +97,12 @@ add_variant <- function(ref,alt,varPos,extractRef,exonTable,exonSEQs) {
   if (ref != extractRef) {
     return("reference mismatch")
   }
+  # check for alteration to the start or stop codon
+  start = as.integer(exonTable$cdsStart[[1]])+1
+  end = as.integer(exonTable$cdsEnd[[1]])
+  if (varPos %in% c(start,start+1,start+2,end,end-1,end-2)) {
+    return("impacts native start or stop site")
+  }
   # assuming that the reference is ok
   affectedExonLocale = which(exonTable$eStartAdj <= varPos & exonTable$eEnd >= varPos)
   affectedExon = exonSEQs[affectedExonLocale]
@@ -272,7 +278,7 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
       # for changes to end of the exon (coding portion)
     } else if (partialStart == partialTable$eStartAdj[[rowNumber]] & partialEnd != partialTable$eEnd[[rowNumber]]) {
       # start site is deleted (any of 3 start site bases)
-      if (partialEnd < cdsStartPos) {
+      if (partialEnd < cdsStartPos+2) {
         return("impacts native start or stop site")
       } else {
         partialTable$eStartAdj[rowNumber] = cdsStartPos
@@ -286,7 +292,7 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
   if (rowNumber == cdsEndRow) {
     # for changes to start of exon (coding portion)
     if (partialStart != partialTable$eStartAdj[[rowNumber]] & partialEnd == partialTable$eEnd[[rowNumber]]) {
-      if (partialStart > cdsEndPos) {
+      if (partialStart > cdsEndPos-2) {
         # stop site is altered
         return("impacts native start or stop site")
       } else {
@@ -509,6 +515,10 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
                                    exonSEQs = alteredExonDNAseqs)
   # exit as supplied reference is wrong
   if (adjustedExonDNAseq == "reference mismatch") {
+    return(adjustedExonDNAseq)
+  }
+  # exit as variant itself affects native start/stop site
+  if (adjustedExonDNAseq == "impacts native start or stop site") {
     return(adjustedExonDNAseq)
   }
   # no changes needed as variant outside of altered sequence
