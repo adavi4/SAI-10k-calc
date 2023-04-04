@@ -268,7 +268,7 @@ get_partial_SEQ <- function(transcript,consensusStart,consensusEnd,
     if (partialStart != partialTable$eStartAdj[[rowNumber]] & partialEnd == partialTable$eEnd[[rowNumber]]) {
       if (partialStart > cdsStartPos) {
         # start site is altered
-        return("impacts native start of stop site")
+        return("impacts native start or stop site")
       } else if (partialStart <= cdsStartPos) {
         return ("does not affect coding region")
       } else {
@@ -551,6 +551,7 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   consensusAAseq <- suppressWarnings(translate(DNAString(consensusJointDNAseq)))
   # check for whether there is a difference in protein sequence
   forwardDiff <- find_difference_point(alteredAAseq,consensusAAseq,direction="forward")
+  difflength = nchar(alteredAAseq) - nchar(consensusAAseq)
   # if no difference stop trying to predict
   if (forwardDiff == "identical") {
     return("no difference in protein sequence")
@@ -559,8 +560,9 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   if (forwardDiff >= 4) {
     alteredAAseq <- subseq(alteredAAseq,forwardDiff-3)
   }
-  # for inframe sequences, strip off any consensus sequence from the end
-  if (frameshift == "NO") {
+  # for inframe sequences, that are not gain of amino acids,
+  # strip off any consensus sequence from the end
+  if (frameshift == "NO" & difflength <= 0) {
     reverseDiff = find_difference_point(alteredAAseq,consensusAAseq,direction="reverse")
     # stop looking if identical sequence
     if (reverseDiff == "identical") {
@@ -570,6 +572,37 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
       alteredAAseq <- subseq(alteredAAseq,1,6)
     } else {
       alteredAAseq <- subseq(alteredAAseq,1,reverseDiff+3)
+    }
+  }
+  # for inframe sequences with a net gain of amino acids
+  # need to check for simple duplicated sections
+  if (frameshift == "NO" & difflength > 0) {
+    alteredseqcheck = substring(alteredAAseq,4,(4+difflength-1))
+    uniqchars = unique(unlist(strsplit(as.character(alteredseqcheck), "")))
+    # for single repeated amino acids
+    if (length(uniqchars) == 1) {
+      # get just the altered aa, and compare to the next consensus
+      alteredseqcheck = substring(alteredseqcheck,1,1)
+      consensusseqcheck = substring(consensusAAseq,(forwardDiff-1),(forwardDiff-1))      
+    } else {
+      # otherwise compare whole inserted sequence
+      consensusseqcheck = substring(consensusAAseq,(forwardDiff-1),(forwardDiff-1+difflength-1))
+    }
+    # if inserted sequence is same as consensus
+    if (alteredseqcheck == consensusseqcheck) {
+      alteredAAseq = substring(alteredAAseq,1,(4+difflength+3-1))
+    } else {
+      # if not identical do as before
+      reverseDiff = find_difference_point(alteredAAseq,consensusAAseq,direction="reverse")
+      # stop looking if identical sequence
+      if (reverseDiff == "identical") {
+        return("no difference in protein sequence")
+      }
+      if (reverseDiff < 3) {
+        alteredAAseq <- subseq(alteredAAseq,1,6)
+      } else {
+        alteredAAseq <- subseq(alteredAAseq,1,reverseDiff+3)
+      }      
     }
   }
   # now check for whether a stop has been introduced
@@ -585,12 +618,20 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   # now do some extra formatting for the end aa sequence
   preOutInfo = paste(as.character(alteredAAseq))
   lengthOutInfo = nchar(preOutInfo)
+  # to account for variants close to the start codon ###################################################### c
+  if (forwardDiff <= 3) {
+    prefixstop = forwardDiff-1
+    suffixstart = prefixstop+1
+  } else {
+    prefixstop = 3
+    suffixstart = 4
+  }
   if (alteredStopPos == -1) {
     # put branching square brackets around the altered sequence
-    prefix = substr(x = preOutInfo, start = 1, stop = 3)
+    prefix = substr(x = preOutInfo, start = 1, stop = prefixstop)
     if (lengthOutInfo >= 6) {
       suffix = substr(x = preOutInfo, start = lengthOutInfo-2, stop = lengthOutInfo)
-      middle = substr(preOutInfo,4,(lengthOutInfo-3))
+      middle = substr(preOutInfo,suffixstart,(lengthOutInfo-3))
     } else {
       suffix = substr(x = preOutInfo, start = 4, stop = lengthOutInfo)
       middle = ""
@@ -598,7 +639,7 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
     outInfo = paste0(prefix,"[",middle,"]",suffix)
   } else {
     # put branching square brackets around the altered sequence until the stop
-    outInfo = paste0(substr(preOutInfo,1,3),"[",substr(preOutInfo,4,lengthOutInfo),"]")
+    outInfo = paste0(substr(preOutInfo,1,prefixstop),"[",substr(preOutInfo,suffixstart,lengthOutInfo),"]")
   }
   return(outInfo)
 }
@@ -997,8 +1038,12 @@ output <- output %>%
   rowwise() %>%
   mutate(Partial_frameshift = case_when(Partial_exon_deletion_aaseq == "deletion greater than exon size" ~ NA_character_,
                                         Partial_exon_deletion_aaseq == "does not affect coding region" ~ NA_character_,
-                                        Partial_exon_deletion_aaseq == "impacts native start of stop site" ~ NA_character_,
+                                        Partial_exon_deletion_aaseq == "impacts native start or stop site" ~ NA_character_,
                                         Partial_exon_deletion_aaseq == "cannot determine" ~ NA_character_,
+                                        Partial_intron_retention_aaseq == "deletion greater than exon size" ~ NA_character_,
+                                        Partial_intron_retention_aaseq == "does not affect coding region" ~ NA_character_,
+                                        Partial_intron_retention_aaseq == "impacts native start or stop site" ~ NA_character_,
+                                        Partial_intron_retention_aaseq == "cannot determine" ~ NA_character_,
                                         TRUE ~ Partial_frameshift))
 
 
