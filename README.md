@@ -8,7 +8,7 @@ SpliceAI post-processing calculator. Requires two files:
 * List of genes and transcripts of interest
 
 
-If you use the parser, please cite our pre-print: Canson, Davidson et al. BioRxiv 2022 https://doi.org/10.1101/2022.07.30.502132
+If you use the parser, please cite our manuscript: Canson DM, Davidson AL et al. Bioinformatics 2023 https://doi.org/10.1093/bioinformatics/btad179
 
 **Authors:**  
 Daffodil Canson - developed the parser   
