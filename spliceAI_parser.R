@@ -66,7 +66,7 @@ DS_ALDL_MAX_T <- opt$DS_ALDL_MAX_T
 AG_T <- opt$AG_T
 DG_T <- opt$DG_T
 input <- read_tsv(opt$in_vcf, comment="##",
-                  col_types = c(`#CHROM` = "c"))
+                  col_types = c(`#CHROM` = "c", REF = "c", ALT = "c"))
 refseq_table <- read_tsv(opt$refseq_table,
                          col_types = cols(.default = "c"))
 output_file <- opt$out_file
