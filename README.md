@@ -116,3 +116,5 @@ Full options are available by running:
 
 	-h, --help
 		Show this help message and exit
+
+Note the parser is currently not fully implemented for variants impacting single exon or single coding exon genes
