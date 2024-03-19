@@ -4,7 +4,7 @@
 ## Developed by Daffodil Canson
 ## Implemented in R by Olga Kondrashova & Aimee Davidson
 ## Functionality extended by Aimee Davidson
-## Date: 14/12/2022
+## Date (latest update): 18/MAR/2024
 
 ################## Load libraries and arguments ################################
 
@@ -19,11 +19,13 @@ option_list = list(
               help="Preprocessed UCSC ncbiRefSeq table (download_tx.R script)", 
               metavar="FILE"),
   make_option(c("-o", "--out_file"), type="character", default="out.tsv", 
-              help="output file name [default= %default]", metavar="FILE"),
+              help="Output file name [default= %default]", metavar="FILE"),
+  make_option("--include", action='store_true',default = FALSE,
+              help="Option to make use of non-delta scores [default= %default]"),
   make_option("--DS_AGDG_MIN_T", type="double", default=0.02, 
               help="Delta score (acceptor & donor gain) - minimum [default= %default]", 
               metavar="NUMERIC"),  
-  make_option("--DS_AGDG_MAX_T", type="double", default=0.05, 
+  make_option("--DS_AGDG_MAX_T", type="double", default=0.2, 
               help="Delta score (acceptor & donor gain) - maximum [default= %default]",
               metavar="NUMERIC"), 
   make_option("--GEX_size_MIN", type="double", default=25, 
@@ -44,6 +46,12 @@ option_list = list(
   make_option("--DG_T", type="double", default=0.2, 
               help="Cryptic splice site - donor gain [default= %default]",
               metavar="NUMERIC"),
+  make_option("--AGDG_T", type="double", default=0.0,
+              help="Cryptic splice site - max acceptor or donor gain [default= %default]",
+              metavar="NUMERIC"),
+  make_option("--DS_GL_T", type="double", default=-0.2,
+              help="Variant score gain loss difference [default= %default]",
+              metavar="NUMERIC"),
   make_option("--ref", type="character", default="hg19",
               help="Optional: reference genome (hg19 or hg38) [default= %default]",
               metavar="STRING")
@@ -57,6 +65,7 @@ library(tidyverse, quietly=TRUE)
 library(Biostrings, quietly = TRUE)
 
 # Load all arguments as variables
+include <- opt$include
 DS_AGDG_MIN_T <- opt$DS_AGDG_MIN_T
 DS_AGDG_MAX_T <- opt$DS_AGDG_MAX_T
 GEX_size_MIN <- opt$GEX_size_MIN
@@ -65,6 +74,8 @@ DS_ALDL_MIN_T <-opt$DS_ALDL_MIN_T
 DS_ALDL_MAX_T <- opt$DS_ALDL_MAX_T
 AG_T <- opt$AG_T
 DG_T <- opt$DG_T
+AGDG_T <- opt$AGDG_T
+DS_GL_T <- opt$DS_GL_T
 input <- read_tsv(opt$in_vcf, comment="##",
                   col_types = c(`#CHROM` = "c", REF = "c", ALT = "c"))
 refseq_table <- read_tsv(opt$refseq_table,
@@ -72,15 +83,18 @@ refseq_table <- read_tsv(opt$refseq_table,
 output_file <- opt$out_file
 ref_genome <- opt$ref
 
-# # Troubleshooting
+# Troubleshooting
+# include <- FALSE
 # DS_AGDG_MIN_T <- 0.02
-# DS_AGDG_MAX_T <- 0.05
+# DS_AGDG_MAX_T <- 0.2
 # GEX_size_MIN <- 25
 # GEX_size_MAX <- 500
 # DS_ALDL_MIN_T <- 0.02
 # DS_ALDL_MAX_T <- 0.2
 # AG_T <- 0.2
 # DG_T <- 0.2
+# AGDG_T <- 0.0
+# DS_GL_T <- -0.2
 # input <- read_tsv("./example_variants.vcf",comment="##",
 #                   col_types = c(`#CHROM` = "c"))
 # refseq_table <- read_tsv("./example_refseq_tx.txt",
@@ -89,7 +103,7 @@ ref_genome <- opt$ref
 # ref_genome <- "hg19"
 
 ################## Helper functions ############################################
-# Helper functions amino acid predictions
+# Helper functions for amino acid predictions
 
 # Mutate the DNA sequence to add the variant
 add_variant <- function(ref,alt,varPos,extractRef,exonTable,exonSEQs) {
@@ -109,7 +123,7 @@ add_variant <- function(ref,alt,varPos,extractRef,exonTable,exonSEQs) {
   # variant is not located within an affected sequence region
   # so don't need to make any adjustments
   if (is_empty(affectedExonLocale) == TRUE) {
-    return("cannot_determine")
+    return("cannot determine")
   } 
   # now update the exon with the variant
   adjustmentSize = (varPos - exonTable$eStartAdj[[affectedExonLocale]])+1
@@ -209,21 +223,21 @@ find_pseudoexon_position <- function(DGpos,AGpos,strand,refseqTab,transcript) {
   }
 }
 
-# Extract which exon(s) have been skipped
-find_exon_lost <- function(transcript,DLposition,ALposition,refseqTab) {
+# Extract which exon(s) have been skipped, or which exon has increased inclusion
+find_exon_lost_gain <- function(transcript,DLDGposition,ALAGposition,refseqTab) {
   exonTab = make_consensus_table(transcript,refseqTab,filterNONCOD = FALSE)
   lostExons = NA_character_
   size = NA_integer_
   # find the exons, for forward strand
-  if (DLposition %in% exonTab$eStartAdj & ALposition %in% exonTab$eEnd) {
-    exons = exonTab %>% filter(., DLposition == eStartAdj | ALposition == eEnd)
+  if (DLDGposition %in% exonTab$eStartAdj & ALAGposition %in% exonTab$eEnd) {
+    exons = exonTab %>% filter(., DLDGposition == eStartAdj | ALAGposition == eEnd)
     exonNums = exons %>% pull(eNum)
     size = exons %>% pull(exon_size) %>% sum()
     lostExons = paste(unique(exonNums),collapse=",")
   }
   # find the exons, for reverse strand
-  if (ALposition %in% exonTab$eStartAdj & DLposition %in% exonTab$eEnd) {
-    exons = exonTab %>% filter(., ALposition == eStartAdj | DLposition == eEnd)
+  if (ALAGposition %in% exonTab$eStartAdj & DLDGposition %in% exonTab$eEnd) {
+    exons = exonTab %>% filter(., ALAGposition == eStartAdj | DLDGposition == eEnd)
     exonNums = exons %>% pull(eNum)
     size = exons %>% pull(exon_size) %>% sum()
     lostExons = paste(unique(exonNums),collapse=",")
@@ -367,7 +381,7 @@ get_skip_SEQ <- function(exons,refseqTable,frameshift,transcript,varPos,ref,alt)
   if (strand == -1) {
     skipTable = skipTable %>% arrange(., desc(eStartAdj))
   }
-  rowNumber = which(skipTable$eNum==minExon)
+  rowNumber = which(skipTable$eNum==as.integer(minExon))
   # correct for CDS positioning in both tables
   skipTable <- skipTable %>%
     mutate(eStartAdj = ifelse(eStartAdj <= cdsstart, cdsstart, eStartAdj),
@@ -489,6 +503,40 @@ get_retention_SEQ <- function(refseqTable,intron,frameshift,transcript,varPos,re
 }
 
 
+# Extract the amino acid sequence for the relevant increased exon inclusion
+get_exon_inclusion_seq <- function(refseqTable,exon,transcript,frameshift,varPos,ref,alt) {
+  # extract the consensus exon table
+  consensusTAB = make_consensus_table(transcript,refseqTable,filterNONCOD=TRUE)
+  inclusionTAB = consensusTAB
+  strand = inclusionTAB$strand[[1]]
+  # pull at the CDS positions
+  cdsstart = as.integer(min(consensusTAB$cdsStart, na.rm = TRUE))+1
+  cdsend = as.integer(min(consensusTAB$cdsEnd, na.rm = TRUE))
+  # reverse the table if negative strand
+  if (strand == -1) {
+    skipTable = inclusionTAB %>% arrange(., desc(eStartAdj))
+  }
+  # note which exon is being increased
+  rowNumber = which(inclusionTAB$eNum==as.integer(exon))
+  # if can't find the target/affected exons then assume an entirely non-coding exon
+  if (is_empty(rowNumber)) {
+    return("increased inclusion of non-coding exon")
+  }
+  # for coding exons then remove all but the upstream exon
+  inclusionTAB <- inclusionTAB %>% ungroup() %>% dplyr::slice(., ((rowNumber-1):n()))
+  # correct for CDS positioning in both tables
+  inclusionTAB <- inclusionTAB %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsstart, cdsstart, eStartAdj),
+           eEnd = ifelse(eEnd > cdsend, cdsend, eEnd))
+  consensusTAB <- consensusTAB %>%
+    mutate(eStartAdj = ifelse(eStartAdj < cdsstart, cdsstart, eStartAdj),
+           eEnd = ifelse(eEnd > cdsend, cdsend, eEnd)) 
+  # extract the sequence
+  predictSEQ = determine_aaSEQ(inclusionTAB,consensusTAB,frameshift,varPos,ref,alt)
+  return(predictSEQ)
+}
+
+
 # Overview function to predict the amino acid sequence
 determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   strand = consensusTab$strand[[1]]
@@ -521,8 +569,8 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   if (adjustedExonDNAseq == "impacts native start or stop site") {
     return(adjustedExonDNAseq)
   }
-  # no changes needed as variant outside of altered sequence
-  if (adjustedExonDNAseq != "cannot_determine") {
+  # changes needed as variant within altered sequence
+  if (adjustedExonDNAseq != "cannot determine") {
     tempNewExon = unlist(stringr::str_split(adjustedExonDNAseq,"_"))
     exonPos = as.numeric(tempNewExon[1])
     exonSEQ = DNAStringSet(tempNewExon[2])
@@ -586,7 +634,14 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
       consensusseqcheck = substring(consensusAAseq,(forwardDiff-1),(forwardDiff-1))      
     } else {
       # otherwise compare whole inserted sequence
-      consensusseqcheck = substring(consensusAAseq,(forwardDiff-1),(forwardDiff-1+difflength-1))
+      # also account for addition to sequence longer than consensus sequence
+      startpos = forwardDiff-1
+      endpos = forwardDiff-1+difflength-1
+      if (endpos > length(consensusAAseq)) {
+        consensusseqcheck = substring(consensusAAseq,startpos,length(consensusAAseq))
+      } else {
+        consensusseqcheck = substring(consensusAAseq,startpos,endpos)
+      }
     }
     # if inserted sequence is same as consensus
     if (alteredseqcheck == consensusseqcheck) {
@@ -618,7 +673,7 @@ determine_aaSEQ <- function(altTable,consensusTab,frameshift,varPos,ref,alt) {
   # now do some extra formatting for the end aa sequence
   preOutInfo = paste(as.character(alteredAAseq))
   lengthOutInfo = nchar(preOutInfo)
-  # to account for variants close to the start codon ###################################################### c
+  # to account for variants close to the start codon
   if (forwardDiff <= 3) {
     prefixstop = forwardDiff-1
     suffixstart = prefixstop+1
@@ -655,21 +710,48 @@ if (ref_genome == "hg19") {
 }
 
 cat("\nReference genome used: ",ref_genome,"\n")
+cat("\nREF and ALT scores used:",include,"\n")
 
 ################## Load input ##################################################
 
 cat("\nPre-processing input\n")
 
+# append a unique variant ID if input file ID is not unique
+if (length(unique(input$ID)) != nrow(input)) {
+  input <- input %>% mutate(ID = paste(ID,"var",row_number(),sep="_"))
+  cat("\nID field in input file is not unique, creating unique ID\n")
+}
 
+# splitting SpliceAI predictions if multiple transcripts included
 input_splice_all <- input %>%
-  # Splitting SpliceAI predictions if multiple transcripts included
-  separate_rows(INFO, sep = ",") %>%
-  # Splitting info field
-  separate(INFO, 
-           into = c("ALLELE","SYMBOL","DS_AG","DS_AL","DS_DG",
-                    "DS_DL","DP_AG","DP_AL","DP_DG","DP_DL"), 
-           sep="[|]",
-           fill="right") %>%
+  separate_rows(INFO, sep = ",")
+
+# Splitting info field dependent on whether non-delta scores are given
+if (include == TRUE) {
+  input_splice_all <- input_splice_all %>%
+    separate(INFO, 
+             into = c("ALLELE","SYMBOL","DS_AG","DS_AL","DS_DG",
+                      "DS_DL","DP_AG","DP_AL","DP_DG","DP_DL",
+                      "DS_AG_REF","DS_AG_ALT","DS_AL_REF","DS_AL_ALT",
+                      "DS_DG_REF","DS_DG_ALT","DS_DL_REF","DS_DL_ALT"),
+             sep="[|]",
+             fill="right") 
+  # check after this first separation if the REF and ALT columns appear to exist
+  colcheck <- input_splice_all %>% summarise_all(~all(is.na(.)))
+  if (colcheck$DS_AG_REF[[1]] == TRUE) {
+    stop("Does not seem as though the REF and ALT fields have been provided")
+  }
+
+} else {
+  input_splice_all <- input_splice_all %>%
+    separate(INFO, 
+             into = c("ALLELE","SYMBOL","DS_AG","DS_AL","DS_DG",
+                      "DS_DL","DP_AG","DP_AL","DP_DG","DP_DL"),
+             sep="[|]",
+             fill="right") 
+}
+# account for those variants without a spliceAI score
+input_splice_all <- input_splice_all %>%
   mutate(ALLELE = if_else((str_detect(ALLELE,"SpliceAI=") | ALLELE == "."),
                            ALLELE,
                            paste0("SpliceAI=",ALLELE))) %>%
@@ -684,9 +766,19 @@ input_splice_annot <- input_splice_all %>%
 # Keeping the rest of the variants for later to add to the final output
 input_splice_other <- input_splice_all %>% 
   filter((DS_AG == "." | ALLELE == ".") | 
-           (str_count(REF) != 1 | str_count(ALT) != 1))  %>%
-  mutate_at(vars(c("DS_AG","DS_AL","DS_DG","DS_DL",
-                   "DP_AG","DP_AL","DP_DG","DP_DL")), ~NA_real_)
+           (str_count(REF) != 1 | str_count(ALT) != 1))  
+# Splitting info field dependent on whether REF and ALT scores are given
+if (include == TRUE) {
+  input_splice_other <- input_splice_other %>%
+    mutate_at(vars(c("DS_AG","DS_AL","DS_DG","DS_DL",
+                     "DP_AG","DP_AL","DP_DG","DP_DL",
+                     "DS_AG_REF","DS_AG_ALT","DS_AL_REF","DS_AL_ALT",
+                     "DS_DG_REF","DS_DG_ALT","DS_DL_REF","DS_DL_ALT")), ~NA_real_)
+} else {
+  input_splice_other <- input_splice_other %>%
+    mutate_at(vars(c("DS_AG","DS_AL","DS_DG","DS_DL",
+                     "DP_AG","DP_AL","DP_DG","DP_DL")), ~NA_real_)  
+}
 
 ################## Prepare transcripts #########################################
 
@@ -758,7 +850,8 @@ if(str_detect(input_splice_annot$SYMBOL[1],"^RefSeqTx-")){
 # Combining variant table with transcripts table
 input_splice_distance <- input_splice_annot %>%
   left_join(refseq_boundaries, by = c("#CHROM" = "chrom",
-                                      "SYMBOL" = "SYMBOL")) %>%
+                                      "SYMBOL" = "SYMBOL"),
+           relationship="many-to-many") %>%
   group_by(ID,SYMBOL) %>%
   # -1 is to account for 0-based position
   mutate(dist_exon_start = as.numeric(POS) - as.numeric(eStart) -1,
@@ -778,9 +871,19 @@ input_splice_distance <- input_splice_annot %>%
                                  TRUE ~ 0)) %>% 
   # add annotation for distance to closest exon
   mutate(d_250bp = if_else(d_from_exon > 250, "YES", "NO"),
-         d_50bp = if_else(d_from_exon > 50, "YES", "NO")) %>%
-  mutate_at(vars(c("DS_AG","DS_AL","DS_DG","DS_DL",
-                   "DP_AG","DP_AL","DP_DG","DP_DL")), ~as.numeric(.)) 
+         d_50bp = if_else(d_from_exon > 50, "YES", "NO")) 
+  # if REF and ALT scores are given
+if (include == TRUE) {
+  input_splice_distance <- input_splice_distance %>%
+    mutate_at(vars(c("DS_AG","DS_AL","DS_DG","DS_DL",
+                     "DP_AG","DP_AL","DP_DG","DP_DL",
+                     "DS_AG_REF","DS_AG_ALT","DS_AL_REF","DS_AL_ALT",
+                     "DS_DG_REF","DS_DG_ALT","DS_DL_REF","DS_DL_ALT")), ~as.numeric(.)) 
+} else {
+  input_splice_distance <- input_splice_distance %>%
+    mutate_at(vars(c("DS_AG","DS_AL","DS_DG","DS_DL",
+                     "DP_AG","DP_AL","DP_DG","DP_DL")), ~as.numeric(.))   
+}
 
 # Add genomic positioning of the spliceAI prediction sites
 output <- input_splice_distance %>%
@@ -817,12 +920,32 @@ output <- output %>%
          LEX_predict = if_else(DS_ALDL_CUTOFF == "PASS" & SS_ALDL_orientation,
                                abs(DP_AL - DP_DL) + 1, NA_real_),
          RET_predict = if_else(DS_ALDL_CUTOFF == "PASS" & !SS_ALDL_orientation,
-                               abs(DP_AL - DP_DL) - 1, NA_real_)) %>% 
+                               abs(DP_AL - DP_DL) - 1, NA_real_))
+
+# De novo cryptic acceptor and donor activation prediction
+if (include) {
+  output <- output %>%
+    rowwise() %>%
+    mutate(DG_native_match = if_else((((GEO_DG == eEnd) & strand == 1) | ((GEO_DG == eStart+1) & strand == -1)),"PASS","FAIL")) %>%
+    mutate(DG_acceptor_match = if_else((((GEO_AG == eStart+1) & strand == 1) | ((GEO_AG == eEnd) & strand == -1)),"PASS","FAIL")) %>%
+    mutate(Acceptor_diff = DS_AG_ALT - DS_AL_ALT) %>%
+    mutate(Donor_diff = DS_DG_ALT - DS_DL_ALT) %>%
+    mutate(Cryptic_Acceptor_activation_check1 = if_else(DS_AG < 0.2 & DS_AL > 0.1 & DS_AG_ALT >= 0.9 & Acceptor_diff >= 0.2,"PASS","FAIL")) %>%
+    mutate(Cryptic_Acceptor_activation_check2 = if_else(DS_AG >= AG_T & Acceptor_diff > DS_GL_T,"PASS","FAIL")) %>%
+    mutate(Cryptic_Donor_activation_check1 = if_else(DS_DG >= DG_T & Donor_diff > DS_GL_T,"PASS","FAIL")) %>%
+    mutate(Cryptic_Donor_activation_check2 = if_else(DS_DG < 0.2 & DS_DL > 0.1 & DS_DG_ALT >= 0.9 & Donor_diff >= 0.2,"PASS","FAIL")) %>%
+    mutate(Cryptic_Acceptor_activation = if_else((DS_AGDG_MAX > AGDG_T & DG_native_match == "PASS" & DG_acceptor_match == "FAIL" & (Cryptic_Acceptor_activation_check1 == "PASS" | Cryptic_Acceptor_activation_check2 == "PASS")) | 
+                                                   (DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DS_AG > DS_DG & (Cryptic_Acceptor_activation_check1 == "PASS" | Cryptic_Acceptor_activation_check2 == "PASS")),"YES","NO")) %>%
+    mutate(Cryptic_Donor_activation = if_else((DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DG_acceptor_match == "PASS" & (Cryptic_Donor_activation_check1 == "PASS" | Cryptic_Donor_activation_check2 == "PASS")) | 
+                                                (DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DS_AG < DS_DG & (Cryptic_Donor_activation_check1 == "PASS" | Cryptic_Donor_activation_check2 == "PASS")), "YES","NO"))
   
+} else {
+  output <- output %>%
   mutate(Cryptic_Acceptor_activation = if_else(DS_AG >= AG_T & DS_AG > DS_DG,
                                                "YES", "NO"),
          Cryptic_Donor_activation = if_else(DS_DG >= DG_T & DS_DG > DS_AG,
                                             "YES", "NO")) 
+}
 
 # Orientation check for partial retention and deletions
 output <- output %>%
@@ -879,7 +1002,18 @@ output <- output %>%
                                    is.na(Lost_exon_size),
                                  "NO", "YES")) %>% 
   mutate(Intron_retention = if_else(d_50bp == "YES" |
-                                      is.na(Retained_intron_size),"NO","YES"))
+                                      is.na(Retained_intron_size),"NO","YES")) %>%
+  mutate(Increased_exon_inclusion = if_else(SS_AGDG_orientation & DS_AGDG_CUTOFF == "PASS" &
+                                              #Gained_exon_size == native_exon_size &
+                                              Gained_exon_size == exon_size &
+                                              ((GEO_AG == eEnd & GEO_DG == eStart+1)| (GEO_DG == eEnd & GEO_AG == eStart+1)),
+                                            "YES","NO")) %>%
+  mutate(Increased_exon_info = ifelse(Increased_exon_inclusion == "YES",find_exon_lost_gain(transcript = name,
+                                                                                 DLDGposition = GEO_DG,
+                                                                                 ALAGposition = GEO_AG,
+                                                                                 refseqTab = refseq_boundaries),NA_character_)) %>%
+  separate(., col = Increased_exon_info, into = c("Exon_with_increased_inclusion","Increased_exon_size"), sep = "[|]", remove = TRUE) %>%
+  dplyr::select(., -c(Increased_exon_size))
 
 
 # Summary of predictions
@@ -889,14 +1023,15 @@ output <- output %>%
                                              Pseudoexon_activation == "YES" | 
                                              Partial_exon_deletion == "YES" |
                                              Exon_skipping == "YES" | 
-                                             Intron_retention == "YES", 
+                                             Intron_retention == "YES" |
+                                             Increased_exon_inclusion == "YES",
                                            "YES", "NO")) %>%
   mutate_at(vars(c(GEX_size, GEX_predict, LEX_predict, RET_predict)),
             ~ replace_na(as.character(.),"FAIL"))
 
 ################## Add additional information ##################################
 
-# Add additional psuedoexon activation information
+# Add additional pseudoexon activation information
 output <- output %>%
   rowwise() %>%
   mutate(Pseudoexon_start = case_when(Pseudoexon_activation == "YES" & 
@@ -932,9 +1067,9 @@ output <- output %>%
 output <- output %>%
   rowwise() %>%
   mutate(Lost_exon_info = ifelse(Exon_skipping == "YES",
-                                 find_exon_lost(transcript = name,
-                                                DLposition = GEO_DL,
-                                                ALposition = GEO_AL,
+                                 find_exon_lost_gain(transcript = name,
+                                                DLDGposition = GEO_DL,
+                                                ALAGposition = GEO_AL,
                                                 refseqTab = refseq_boundaries),NA_character_)) %>%
   separate(., col = Lost_exon_info, into = c("Lost_exons","Lost_exons_combined_size"), sep = "[|]", remove = TRUE) %>%
   mutate(Lost_exons_combined_size = na_if(Lost_exons_combined_size, "NA"),
@@ -1033,6 +1168,18 @@ output <- output %>%
                                                            ref = REF,
                                                            alt = ALT),"-"))
 
+# for increased exon inclusion
+output <- output %>%
+  rowwise() %>%
+  mutate(Increased_exon_inclusion_aaseq = ifelse(Increased_exon_inclusion == "YES",
+                                                 get_exon_inclusion_seq(refseqTable = refseq_boundaries,
+                                                           transcript = name,
+                                                           frameshift = "NO",
+                                                           varPos = POS,
+                                                           ref = REF,
+                                                           alt = ALT,
+                                                           exon = Exon_with_increased_inclusion),"-"))
+
 # clean up the partial frameshift column
 output <- output %>%
   rowwise() %>%
@@ -1057,10 +1204,29 @@ output_all <- output %>%
   bind_rows(input_splice_other)
 
 # Drop columns from output
+if (include == TRUE) {
+  output_all <- output_all %>%
+    dplyr::select(., c(`#CHROM`:DP_DL,DS_AG_REF:DS_DL_ALT,
+                       name,strand,Any_splicing_aberration,
+                       bp_5prime,bp_3prime,Partial_intron_retention,
+                       Partial_exon_deletion,Partial_exon_start,
+                       Partial_exon_end,Partial_frameshift,
+                       Partial_intron_retention_aaseq,
+                       Partial_exon_deletion_aaseq,Gained_exon_size,
+                       Pseudoexon_activation,Pseudoexon_start,
+                       Pseudoexon_end,Pseudoexon_frameshift,
+                       Pseudoexon_intron,Pseudoexon_activation_aaseq,
+                       Increased_exon_inclusion,Exon_with_increased_inclusion,
+                       Increased_exon_inclusion_aaseq,
+                       Exon_skipping,Lost_exons,Exon_skipping_frameshift,
+                       Exon_skipping_aaseq,Retained_intron_size,
+                       Intron_retention,Retained_intron,
+                       Intron_retention_frameshift,Intron_retention_aaseq)) %>%
+    dplyr::rename(Used_RefSeq_Transcript = name)  
+} else {
 output_all <- output_all %>%
   dplyr::select(., c(`#CHROM`:DP_DL,
-                     name,strand,Cryptic_Acceptor_activation,
-                     Cryptic_Donor_activation,Any_splicing_aberration,
+                     name,strand,Any_splicing_aberration,
                      bp_5prime,bp_3prime,Partial_intron_retention,
                      Partial_exon_deletion,Partial_exon_start,
                      Partial_exon_end,Partial_frameshift,
@@ -1069,11 +1235,14 @@ output_all <- output_all %>%
                      Pseudoexon_activation,Pseudoexon_start,
                      Pseudoexon_end,Pseudoexon_frameshift,
                      Pseudoexon_intron,Pseudoexon_activation_aaseq,
+                     Increased_exon_inclusion,Exon_with_increased_inclusion,
+                     Increased_exon_inclusion_aaseq,
                      Exon_skipping,Lost_exons,Exon_skipping_frameshift,
                      Exon_skipping_aaseq,Retained_intron_size,
                      Intron_retention,Retained_intron,
                      Intron_retention_frameshift,Intron_retention_aaseq)) %>%
   dplyr::rename(Used_RefSeq_Transcript = name)
+}
 
 output_all %>%
   write_tsv(output_file)
