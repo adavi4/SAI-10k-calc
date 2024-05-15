@@ -124,7 +124,7 @@ Full options are available by running:
 		Cryptic splice site - donor gain [default= 0.2]
 
 	--AGDG_T=NUMERIC
-		Cryptic splice site - acceptor gain [default= 0.2]
+		Cryptic splice site - max acceptor or donor gain [default= 0.0],
 
   	--DS_DL_T=NUMERIC
 		Variant score gain loss difference [default= -0.2]
@@ -135,6 +135,6 @@ Full options are available by running:
 	-h, --help
 		Show this help message and exit
 
-We have increased the default DS_ALDL_MAX_T threshold to 0.2 to better reflect recommendations by ClinGen SVI Splicing Subgroup (DOI https://doi.org/10.1016/j.ajhg.2023.06.002). However for research purposes we still recommend initially using the previous default threshold of 0.05 
+We have increased the default DS_AGDG_MAX_T threshold to 0.2 to better reflect recommendations by ClinGen SVI Splicing Subgroup (DOI https://doi.org/10.1016/j.ajhg.2023.06.002). However for research purposes we still recommend initially using the previous default threshold of 0.05 
 
 Note the parser is currently not fully implemented for variants impacting single exon or single coding exon genes
