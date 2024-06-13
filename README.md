@@ -126,7 +126,7 @@ Full options are available by running:
 	--AGDG_T=NUMERIC
 		Cryptic splice site - max acceptor or donor gain [default= 0.0],
 
-  	--DS_DL_T=NUMERIC
+  	--DS_GL_T=NUMERIC
 		Variant score gain loss difference [default= -0.2]
 
 	--ref=STRING
