@@ -448,7 +448,7 @@ get_pseudo_SEQ <- function(pseudoStart,pseudoEnd,refseqTable,frameshift,
 # Format the refseq table to reflect the intron retention impact
 get_retention_SEQ <- function(refseqTable,intron,frameshift,transcript,varPos,ref,alt) {
   if (is.na(intron)) {
-    return("loss site/s do not match consensus")
+    return("lost site/s do not match consensus")
   }
   consensusTable = make_consensus_table(transcript,refseqTable,filterNONCOD = TRUE)
   retentionTable = consensusTable
