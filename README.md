@@ -79,7 +79,7 @@ Alternatively, to generate SpliceAI output with the REF and ALT score use this [
 
 **Step 3.** Run `spliceAI_parser.R` script using the pre-processed transcript table from Step 1 (example_refseq_tx_hg19.txt) and the SpliceAI output vcf file.
 
-`Rscript spliceAI_parser.R -i example_variants.vcf -r example_refseq_tx_hg19.txt -o example_variants_parsed.tsv`
+`Rscript spliceAI_parser.R -i example_variants.spliceAI.vcf -r example_refseq_tx_hg19.txt -o example_variants_parsed.tsv`
 
 Full options are available by running:
 
