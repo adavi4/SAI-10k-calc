@@ -10,6 +10,8 @@ SpliceAI post-processing calculator. Requires two files:
 
 If you use the parser, please cite our manuscript: Canson DM, Davidson AL et al. Bioinformatics 2023 https://doi.org/10.1093/bioinformatics/btad179
 
+For the updated version of our parser using REF/ALT scores please cite our manuscript: Canson DM, Parsons MT et al. Genome Research 2025 https://genome.cshlp.org/content/early/2025/08/06/gr.279557.124
+
 The SAI-10k-calc can now optionally accept SpliceAI input files with additional columns containing the REF and ALT scores (the Delta score is the difference between these two scores). Using these scores can lead to improved partial exon deletion and partial intron retention predictions. 
 
 We developed the SpliceAI-10k calculator (SAI-10k-calc) to extend use of the SpliceAI tool to predict: the splicing aberration type including: pseudoexonization, intron retention, partial exon deletion, partial intron retention, (multi)exon skipping and increased exon inclusion.
