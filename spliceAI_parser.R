@@ -935,9 +935,9 @@ if (include) {
     mutate(Cryptic_Donor_activation_check1 = if_else(DS_DG >= DG_T & Donor_diff > DS_GL_T,"PASS","FAIL")) %>%
     mutate(Cryptic_Donor_activation_check2 = if_else(DS_DG < 0.2 & DS_DL > 0.1 & DS_DG_ALT >= 0.9 & Donor_diff >= 0.2,"PASS","FAIL")) %>%
     mutate(Cryptic_Acceptor_activation = if_else((DS_AGDG_MAX > AGDG_T & DG_native_match == "PASS" & DG_acceptor_match == "FAIL" & (Cryptic_Acceptor_activation_check1 == "PASS" | Cryptic_Acceptor_activation_check2 == "PASS")) | 
-                                                   (DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DS_AG > DS_DG & (Cryptic_Acceptor_activation_check1 == "PASS" | Cryptic_Acceptor_activation_check2 == "PASS")),"YES","NO")) %>%
+                                                   (DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DG_acceptor_match == "FAIL" & DS_AG > DS_DG & (Cryptic_Acceptor_activation_check1 == "PASS" | Cryptic_Acceptor_activation_check2 == "PASS")),"YES","NO")) %>%
     mutate(Cryptic_Donor_activation = if_else((DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DG_acceptor_match == "PASS" & (Cryptic_Donor_activation_check1 == "PASS" | Cryptic_Donor_activation_check2 == "PASS")) | 
-                                                (DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DS_AG < DS_DG & (Cryptic_Donor_activation_check1 == "PASS" | Cryptic_Donor_activation_check2 == "PASS")), "YES","NO"))
+                                                (DS_AGDG_MAX > AGDG_T & DG_native_match == "FAIL" & DG_acceptor_match == "FAIL" & DS_AG < DS_DG & (Cryptic_Donor_activation_check1 == "PASS" | Cryptic_Donor_activation_check2 == "PASS")), "YES","NO"))
   
 } else {
   output <- output %>%
